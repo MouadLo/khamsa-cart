@@ -1,7 +1,7 @@
 {
-  "name": "groceryvape-backend",
+  "name": "khamsa-cart-backend",
   "version": "1.0.0",
-  "description": "Node.js backend for GroceryVape Morocco e-commerce platform",
+  "description": "Node.js backend for Khamsa Cart - Morocco's blessed marketplace",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",

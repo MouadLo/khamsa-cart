@@ -1,6 +1,8 @@
-# 🇲🇦 GroceryVape Morocco E-commerce Platform
+# 🪬 Khamsa Cart - Morocco's Blessed Marketplace
 
-A comprehensive e-commerce platform for grocery and vape delivery in Morocco, featuring Cash on Delivery (COD) and dual payment systems.
+*"Where tradition meets innovation, and every delivery is blessed"*
+
+A comprehensive e-commerce platform for grocery and lifestyle products in Morocco, featuring Cash on Delivery (COD) and modern payment systems. Named after the traditional Hand of Fatima (Khamsa), symbolizing protection and prosperity for every order.
 
 ## 🏗️ Architecture Overview
 

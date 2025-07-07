@@ -141,9 +141,9 @@ app.use('/api/admin', adminRoutes);
 // Root endpoint with API info
 app.get('/', (req, res) => {
   res.json({
-    name: 'GroceryVape Morocco API',
+    name: 'Khamsa Cart API',
     version: require('../package.json').version,
-    description: 'E-commerce API for grocery and vape delivery in Morocco',
+    description: 'Morocco\'s blessed marketplace - E-commerce API with protection and prosperity',
     features: [
       'Multi-language support (Arabic, French, English)',
       'Cash on Delivery (COD) support',
