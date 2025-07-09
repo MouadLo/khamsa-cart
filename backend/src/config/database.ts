@@ -1,19 +1,66 @@
-const { Pool } = require('pg');
-require('dotenv').config();
+import { Pool, PoolClient, QueryResult } from 'pg';
+import * as dotenv from 'dotenv';
+
+dotenv.config();
+
+// Type definitions
+interface DatabaseConfig {
+  host: string;
+  port: number;
+  database: string;
+  user: string;
+  password: string;
+  max: number;
+  min: number;
+  idle: number;
+  connectionTimeoutMillis: number;
+  idleTimeoutMillis: number;
+  query_timeout: number;
+  ssl: boolean | { rejectUnauthorized: boolean };
+  application_name: string;
+}
+
+interface HealthCheckResult {
+  status: 'healthy' | 'unhealthy';
+  active_connections?: number;
+  total_transactions?: number;
+  database_size_mb?: number;
+  pool_info?: {
+    total_connections: number;
+    idle_connections: number;
+    waiting_requests: number;
+  };
+  error?: string;
+}
+
+interface DatabaseStats {
+  active_connections: string;
+  transactions_committed: string;
+  transactions_rolled_back: string;
+  database_size_bytes: string;
+}
+
+interface ConnectionTestResult {
+  version: string;
+  database: string;
+  user: string;
+  morocco_time: string;
+  database_size: string;
+}
 
 // Database configuration for PostgreSQL
-const dbConfig = {
+const dbConfig: DatabaseConfig = {
   // Connection parameters
   host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 5432,
+  port: parseInt(process.env.DB_PORT || '5432'),
   database: process.env.DB_NAME || 'groceryvape_morocco',
   user: process.env.DB_USER || 'postgres',
   password: process.env.DB_PASSWORD || 'password',
   
   // Connection pool settings
-  max: process.env.DB_POOL_MAX || 20, // Maximum number of connections
-  min: process.env.DB_POOL_MIN || 5,  // Minimum number of connections
-  idle: process.env.DB_POOL_IDLE || 10000, // Close connections after 10 seconds of inactivity
+  max: parseInt(process.env.DB_POOL_MAX || '20'), // Maximum number of connections
+  min: parseInt(process.env.DB_POOL_MIN || '5'),  // Minimum number of connections
+  idle: parseInt(process.env.DB_POOL_IDLE || '10000'), // Close connections after 10 seconds of inactivity
   
   // Connection timeouts
   connectionTimeoutMillis: 30000, // 30 seconds
@@ -33,8 +80,8 @@ const dbConfig = {
 const pool = new Pool(dbConfig);
 
 // Pool event handlers
-pool.on('connect', (client) => {
-  console.log(`📦 New database connection established (PID: ${client.processID})`);
+pool.on('connect', (client: PoolClient) => {
+  console.log(`📦 New database connection established (PID: ${(client as any).processID || 'unknown'})`);
   
   // Set default timezone to Morocco
   client.query("SET timezone = 'Africa/Casablanca'");
@@ -43,24 +90,24 @@ pool.on('connect', (client) => {
   client.query("SET client_encoding = 'UTF8'");
 });
 
-pool.on('error', (err, client) => {
+pool.on('error', (err: Error, client?: PoolClient) => {
   console.error('❌ Database pool error:', err);
-  console.error(`Client PID: ${client?.processID}`);
+  console.error(`Client PID: ${(client as any)?.processID || 'unknown'}`);
 });
 
-pool.on('acquire', (client) => {
-  console.log(`🔗 Database connection acquired (PID: ${client.processID})`);
+pool.on('acquire', (client: PoolClient) => {
+  console.log(`🔗 Database connection acquired (PID: ${(client as any).processID || 'unknown'})`);
 });
 
-pool.on('release', (client) => {
-  console.log(`🔓 Database connection released (PID: ${client.processID})`);
+pool.on('release', (err: Error, client: PoolClient) => {
+  console.log(`🔓 Database connection released (PID: ${(client as any)?.processID || 'unknown'})`);
 });
 
 // Test database connection
-async function testConnection() {
+async function testConnection(): Promise<boolean> {
   try {
     const client = await pool.connect();
-    const result = await client.query(`
+    const result: QueryResult<ConnectionTestResult> = await client.query(`
       SELECT 
         version() as version,
         current_database() as database,
@@ -79,17 +126,18 @@ async function testConnection() {
     client.release();
     return true;
   } catch (error) {
-    console.error('❌ Database connection test failed:', error.message);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('❌ Database connection test failed:', errorMessage);
     return false;
   }
 }
 
 // Query wrapper with error handling and logging
-async function query(text, params = []) {
+async function query<T extends Record<string, any> = any>(text: string, params: any[] = []): Promise<QueryResult<T>> {
   const start = Date.now();
   
   try {
-    const result = await pool.query(text, params);
+    const result: QueryResult<T> = await pool.query(text, params);
     const duration = Date.now() - start;
     
     // Log slow queries (> 1 second)
@@ -107,7 +155,8 @@ async function query(text, params = []) {
     
     return result;
   } catch (error) {
-    console.error('❌ Database query error:', error.message);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('❌ Database query error:', errorMessage);
     console.error('   Query:', text);
     if (params.length > 0) {
       console.error('   Parameters:', params);
@@ -117,7 +166,7 @@ async function query(text, params = []) {
 }
 
 // Transaction wrapper
-async function transaction(callback) {
+async function transaction<T>(callback: (client: PoolClient) => Promise<T>): Promise<T> {
   const client = await pool.connect();
   
   try {
@@ -130,7 +179,8 @@ async function transaction(callback) {
     return result;
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error('❌ Transaction rolled back:', error.message);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('❌ Transaction rolled back:', errorMessage);
     throw error;
   } finally {
     client.release();
@@ -138,7 +188,7 @@ async function transaction(callback) {
 }
 
 // Helper function for paginated queries
-function buildPaginationQuery(baseQuery, page = 1, limit = 20, orderBy = 'created_at DESC') {
+function buildPaginationQuery(baseQuery: string, page: number = 1, limit: number = 20, orderBy: string = 'created_at DESC'): string {
   const offset = (page - 1) * limit;
   return `
     ${baseQuery}
@@ -148,7 +198,7 @@ function buildPaginationQuery(baseQuery, page = 1, limit = 20, orderBy = 'create
 }
 
 // Helper function for search queries with Arabic support
-function buildSearchQuery(searchTerm, language = 'ar') {
+function buildSearchQuery(searchTerm: string, language: 'ar' | 'fr' | 'en' = 'ar'): string {
   if (!searchTerm) return '';
   
   const searchConfig = {
@@ -162,9 +212,9 @@ function buildSearchQuery(searchTerm, language = 'ar') {
 }
 
 // Database health check
-async function healthCheck() {
+async function healthCheck(): Promise<HealthCheckResult> {
   try {
-    const result = await query(`
+    const result: QueryResult<DatabaseStats> = await query(`
       SELECT 
         pg_stat_database.numbackends as active_connections,
         pg_stat_database.xact_commit as transactions_committed,
@@ -179,9 +229,9 @@ async function healthCheck() {
     
     return {
       status: 'healthy',
-      active_connections: stats.active_connections,
+      active_connections: parseInt(stats.active_connections),
       total_transactions: parseInt(stats.transactions_committed) + parseInt(stats.transactions_rolled_back),
-      database_size_mb: Math.round(stats.database_size_bytes / 1024 / 1024),
+      database_size_mb: Math.round(parseInt(stats.database_size_bytes) / 1024 / 1024),
       pool_info: {
         total_connections: pool.totalCount,
         idle_connections: pool.idleCount,
@@ -189,21 +239,22 @@ async function healthCheck() {
       }
     };
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return {
       status: 'unhealthy',
-      error: error.message
+      error: errorMessage
     };
   }
 }
 
 // Graceful shutdown
-async function close() {
+async function close(): Promise<void> {
   console.log('🔌 Closing database connections...');
   await pool.end();
   console.log('✅ Database connections closed');
 }
 
-module.exports = {
+export {
   pool,
   query,
   transaction,
@@ -211,5 +262,7 @@ module.exports = {
   healthCheck,
   close,
   buildPaginationQuery,
-  buildSearchQuery
+  buildSearchQuery,
+  DatabaseConfig,
+  HealthCheckResult
 };

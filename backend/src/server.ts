@@ -1,22 +1,67 @@
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const morgan = require('morgan');
-const compression = require('compression');
-const rateLimit = require('express-rate-limit');
-require('dotenv').config();
+import express, { Request, Response, NextFunction, Application } from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import morgan from 'morgan';
+import compression from 'compression';
+import rateLimit from 'express-rate-limit';
+import * as dotenv from 'dotenv';
+import * as packageJson from '../package.json';
 
-const db = require('./config/database');
+import * as db from './config/database';
 
 // Import routes
-const authRoutes = require('./routes/auth');
-const productRoutes = require('./routes/products');
-const orderRoutes = require('./routes/orders');
-const codRoutes = require('./routes/cod');
-const adminRoutes = require('./routes/admin');
+import authRoutes from './routes/auth';
+import productRoutes from './routes/products';
+import orderRoutes from './routes/orders';
+import codRoutes from './routes/cod';
+import adminRoutes from './routes/admin';
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+dotenv.config();
+
+// Custom properties are defined in types/express.d.ts
+
+// Custom Error interface
+interface CustomError extends Error {
+  statusCode?: number;
+  code?: string;
+  constraint?: string;
+  details?: any;
+  message_ar?: string;
+  message_fr?: string;
+}
+
+// Health check response interface
+interface HealthResponse {
+  status: 'healthy' | 'unhealthy';
+  timestamp: string;
+  server_time?: string;
+  database?: string;
+  database_version?: string;
+  environment?: string;
+  version: string;
+  error?: string;
+}
+
+// API info response interface
+interface ApiInfoResponse {
+  name: string;
+  version: string;
+  description: string;
+  features: string[];
+  endpoints: {
+    health: string;
+    auth: string;
+    products: string;
+    orders: string;
+    cod: string;
+    admin: string;
+  };
+  language: string;
+  documentation: string;
+}
+
+const app: Application = express();
+const PORT = parseInt(process.env.PORT || '3000');
 
 // ============================================================================
 // MIDDLEWARE
@@ -68,15 +113,15 @@ if (process.env.NODE_ENV !== 'test') {
 // ============================================================================
 
 // Language detection middleware
-app.use((req, res, next) => {
+app.use((req: Request, res: Response, next: NextFunction) => {
   const acceptLanguage = req.headers['accept-language'];
-  const supportedLanguages = ['ar', 'fr', 'en'];
+  const supportedLanguages: Array<'ar' | 'fr' | 'en'> = ['ar', 'fr', 'en'];
   
   // Default to Arabic for Morocco
-  let language = 'ar';
+  let language: 'ar' | 'fr' | 'en' = 'ar';
   
   if (acceptLanguage) {
-    const preferredLanguage = acceptLanguage.split(',')[0].split('-')[0];
+    const preferredLanguage = acceptLanguage.split(',')[0].split('-')[0] as 'ar' | 'fr' | 'en';
     if (supportedLanguages.includes(preferredLanguage)) {
       language = preferredLanguage;
     }
@@ -87,18 +132,18 @@ app.use((req, res, next) => {
 });
 
 // Request timing middleware
-app.use((req, res, next) => {
+app.use((req: Request, res: Response, next: NextFunction) => {
   req.startTime = Date.now();
   next();
 });
 
 // Response timing middleware
-app.use((req, res, next) => {
+app.use((req: Request, res: Response, next: NextFunction) => {
   const originalSend = res.send;
-  res.send = function(data) {
-    const responseTime = Date.now() - req.startTime;
+  res.send = function(data: any) {
+    const responseTime = Date.now() - (req.startTime || Date.now());
     res.header('X-Response-Time', `${responseTime}ms`);
-    originalSend.call(this, data);
+    return originalSend.call(this, data);
   };
   next();
 });
@@ -108,26 +153,31 @@ app.use((req, res, next) => {
 // ============================================================================
 
 // Health check endpoint
-app.get('/health', async (req, res) => {
+app.get('/health', async (req: Request, res: Response) => {
   try {
     // Test database connection
-    const result = await db.query('SELECT NOW() as server_time, version() as db_version');
+    const result = await db.query<{server_time: string, db_version: string}>('SELECT NOW() as server_time, version() as db_version');
     
-    res.json({
+    const response: HealthResponse = {
       status: 'healthy',
       timestamp: new Date().toISOString(),
       server_time: result.rows[0].server_time,
       database: 'connected',
       database_version: result.rows[0].db_version.split(' ')[0],
       environment: process.env.NODE_ENV || 'development',
-      version: require('../package.json').version
-    });
+      version: packageJson.version
+    };
+
+    res.json(response);
   } catch (error) {
-    res.status(503).json({
+    const response: HealthResponse = {
       status: 'unhealthy',
       error: 'Database connection failed',
-      timestamp: new Date().toISOString()
-    });
+      timestamp: new Date().toISOString(),
+      version: packageJson.version
+    };
+
+    res.status(503).json(response);
   }
 });
 
@@ -139,10 +189,10 @@ app.use('/api/cod', codRoutes);
 app.use('/api/admin', adminRoutes);
 
 // Root endpoint with API info
-app.get('/', (req, res) => {
-  res.json({
+app.get('/', (req: Request, res: Response) => {
+  const response: ApiInfoResponse = {
     name: 'Khamsa Cart API',
-    version: require('../package.json').version,
+    version: packageJson.version,
     description: 'Morocco\'s blessed marketplace - E-commerce API with protection and prosperity',
     features: [
       'Multi-language support (Arabic, French, English)',
@@ -160,9 +210,11 @@ app.get('/', (req, res) => {
       cod: '/api/cod',
       admin: '/api/admin'
     },
-    language: req.language,
+    language: req.language || 'ar',
     documentation: '/api/docs' // TODO: Add API documentation
-  });
+  };
+
+  res.json(response);
 });
 
 // ============================================================================
@@ -170,7 +222,7 @@ app.get('/', (req, res) => {
 // ============================================================================
 
 // 404 handler
-app.use((req, res) => {
+app.use((req: Request, res: Response) => {
   res.status(404).json({
     error: 'Endpoint not found',
     error_ar: 'الصفحة غير موجودة',
@@ -182,7 +234,7 @@ app.use((req, res) => {
 });
 
 // Global error handler
-app.use((error, req, res, next) => {
+app.use((error: CustomError, req: Request, res: Response, next: NextFunction): Response | void => {
   console.error('Error:', error);
   
   // Database connection errors
@@ -256,7 +308,7 @@ process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down gracefully...');
   
   // Close database connections
-  await db.end();
+  await db.close();
   
   process.exit(0);
 });
@@ -265,7 +317,7 @@ process.on('SIGINT', async () => {
   console.log('SIGINT received, shutting down gracefully...');
   
   // Close database connections
-  await db.end();
+  await db.close();
   
   process.exit(0);
 });
@@ -275,7 +327,7 @@ process.on('SIGINT', async () => {
 // ============================================================================
 
 // Test database connection before starting server
-async function startServer() {
+async function startServer(): Promise<void> {
   try {
     await db.query('SELECT 1');
     console.log('✅ Database connected successfully');
@@ -288,7 +340,8 @@ async function startServer() {
       console.log(`🇲🇦 Supporting languages: Arabic, French, English`);
     });
   } catch (error) {
-    console.error('❌ Failed to connect to database:', error.message);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('❌ Failed to connect to database:', errorMessage);
     console.error('Please check your database configuration in .env file');
     process.exit(1);
   }
@@ -296,4 +349,4 @@ async function startServer() {
 
 startServer();
 
-module.exports = app;
+export default app;

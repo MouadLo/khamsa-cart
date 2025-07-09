@@ -1,8 +1,108 @@
-const express = require('express');
-const { body, validationResult } = require('express-validator');
-const db = require('../config/database');
-const { authenticateToken } = require('./auth');
+import express, { Request, Response } from 'express';
+import { body, validationResult } from 'express-validator';
+import * as db from '../config/database';
+import { authenticateToken } from './auth';
+
 const router = express.Router();
+
+// Type definitions
+interface CODCollection {
+  collection_id: string;
+  order_id: string;
+  amount_to_collect: number;
+  collected_amount?: number;
+  collection_status: 'pending' | 'collected' | 'cancelled';
+  payment_method?: 'cash' | 'card_on_delivery';
+  collected_at?: string;
+  collected_by?: string;
+  notes?: string;
+  order_number: string;
+  order_total: number;
+  delivery_address: string;
+  delivery_latitude: number;
+  delivery_longitude: number;
+  order_status: string;
+  order_created_at: string;
+  customer_name: string;
+  customer_phone: string;
+  delivery_person_name?: string;
+  delivery_person_phone?: string;
+  order_items?: OrderItem[];
+  collected_by_name?: string;
+}
+
+interface OrderItem {
+  item_id: string;
+  product_name: string;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+}
+
+interface CODCollectionRequest {
+  order_id: string;
+  collected_amount: number;
+  payment_method: 'cash' | 'card_on_delivery';
+  notes?: string;
+}
+
+interface CODFilters {
+  status?: string;
+  page?: string;
+  limit?: string;
+  delivery_person_id?: string;
+}
+
+interface CODStats {
+  pending_collections: number;
+  completed_collections: number;
+  cancelled_collections: number;
+  pending_amount: number;
+  collected_amount: number;
+  avg_collection_amount: number;
+  cash_payments: number;
+  card_payments: number;
+}
+
+interface DailyTrend {
+  collection_date: string;
+  collections_count: number;
+  daily_total: number;
+}
+
+interface TopCollector {
+  user_id: string;
+  name: string;
+  collections_count: number;
+  total_collected: number;
+}
+
+interface StatsFilters {
+  start_date?: string;
+  end_date?: string;
+  delivery_person_id?: string;
+}
+
+interface PaginationInfo {
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
+}
+
+interface UserCODOrder {
+  collection_id: string;
+  amount_to_collect: number;
+  collected_amount?: number;
+  collection_status: 'pending' | 'collected' | 'cancelled';
+  collected_at?: string;
+  order_id: string;
+  order_number: string;
+  total: number;
+  order_status: string;
+  order_date: string;
+  delivery_address: string;
+}
 
 // Validation middleware
 const validateCODCollection = [
@@ -22,13 +122,13 @@ const validateCODCollection = [
 ];
 
 // Get all COD collections (for delivery personnel/admin)
-router.get('/collections', authenticateToken, async (req, res) => {
+router.get('/collections', authenticateToken, async (req: Request, res: Response): Promise<Response | void> => {
   try {
-    const { status = 'pending', page = 1, limit = 20, delivery_person_id } = req.query;
-    const offset = (page - 1) * limit;
+    const { status = 'pending', page = '1', limit = '20', delivery_person_id } = req.query as CODFilters;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
 
     let whereConditions = ['cod.collection_status = $1'];
-    let queryParams = [status];
+    let queryParams: any[] = [status];
     let paramCount = 1;
 
     // Filter by delivery person if specified
@@ -72,9 +172,9 @@ router.get('/collections', authenticateToken, async (req, res) => {
       LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
     `;
 
-    queryParams.push(parseInt(limit), parseInt(offset));
+    queryParams.push(parseInt(limit), offset);
 
-    const result = await db.query(query, queryParams);
+    const result = await db.query<CODCollection>(query, queryParams);
 
     // Get total count
     const countQuery = `
@@ -84,20 +184,22 @@ router.get('/collections', authenticateToken, async (req, res) => {
       WHERE ${whereClause}
     `;
 
-    const countResult = await db.query(countQuery, queryParams.slice(0, -2));
+    const countResult = await db.query<{total: string}>(countQuery, queryParams.slice(0, -2));
     const total = parseInt(countResult.rows[0].total);
+
+    const pagination: PaginationInfo = {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      total: total,
+      pages: Math.ceil(total / parseInt(limit))
+    };
 
     res.json({
       collections: result.rows,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: total,
-        pages: Math.ceil(total / limit)
-      },
+      pagination,
       summary: {
         status: status,
-        total_amount: result.rows.reduce((sum, col) => sum + parseFloat(col.amount_to_collect || 0), 0)
+        total_amount: result.rows.reduce((sum, col) => sum + parseFloat(col.amount_to_collect.toString() || '0'), 0)
       }
     });
 
@@ -112,11 +214,11 @@ router.get('/collections', authenticateToken, async (req, res) => {
 });
 
 // Get single COD collection details
-router.get('/collections/:collection_id', authenticateToken, async (req, res) => {
+router.get('/collections/:collection_id', authenticateToken, async (req: Request, res: Response): Promise<Response | void> => {
   try {
     const { collection_id } = req.params;
 
-    const result = await db.query(`
+    const result = await db.query<CODCollection>(`
       SELECT 
         cod.*,
         o.order_number,
@@ -175,7 +277,7 @@ router.get('/collections/:collection_id', authenticateToken, async (req, res) =>
 });
 
 // Mark COD as collected (for delivery personnel)
-router.post('/collections/:collection_id/collect', authenticateToken, validateCODCollection, async (req, res) => {
+router.post('/collections/:collection_id/collect', authenticateToken, validateCODCollection, async (req: Request, res: Response): Promise<Response | void> => {
   const client = await db.pool.connect();
   
   try {
@@ -192,11 +294,18 @@ router.post('/collections/:collection_id/collect', authenticateToken, validateCO
     await client.query('BEGIN');
 
     const { collection_id } = req.params;
-    const { collected_amount, payment_method, notes } = req.body;
-    const collector_id = req.user.user_id;
+    const { collected_amount, payment_method, notes } = req.body as CODCollectionRequest;
+    const collector_id = req.user!.user_id;
 
     // Check if collection exists and is pending
-    const collectionCheck = await client.query(`
+    const collectionCheck = await client.query<{
+      collection_id: string;
+      order_id: string;
+      amount_to_collect: string;
+      collection_status: string;
+      order_status: string;
+      total: string;
+    }>(`
       SELECT cod.*, o.order_status, o.total
       FROM cod_collections cod
       JOIN orders o ON cod.order_id = o.order_id
@@ -226,7 +335,7 @@ router.post('/collections/:collection_id/collect', authenticateToken, validateCO
 
     // Validate collected amount
     const expectedAmount = parseFloat(collection.amount_to_collect);
-    const actualAmount = parseFloat(collected_amount);
+    const actualAmount = parseFloat(collected_amount.toString());
 
     if (Math.abs(expectedAmount - actualAmount) > 0.01) {
       await client.query('ROLLBACK');
@@ -266,7 +375,7 @@ router.post('/collections/:collection_id/collect', authenticateToken, validateCO
     await client.query('COMMIT');
 
     // Fetch updated collection details
-    const updatedCollection = await db.query(`
+    const updatedCollection = await db.query<CODCollection>(`
       SELECT 
         cod.*,
         o.order_number,
@@ -300,12 +409,12 @@ router.post('/collections/:collection_id/collect', authenticateToken, validateCO
 });
 
 // Get COD collection statistics (for admin/managers)
-router.get('/stats/summary', authenticateToken, async (req, res) => {
+router.get('/stats/summary', authenticateToken, async (req: Request, res: Response): Promise<Response | void> => {
   try {
-    const { start_date, end_date, delivery_person_id } = req.query;
+    const { start_date, end_date, delivery_person_id } = req.query as StatsFilters;
     
     let whereConditions = ['1=1'];
-    let queryParams = [];
+    let queryParams: any[] = [];
     let paramCount = 0;
 
     // Date range filter
@@ -345,7 +454,7 @@ router.get('/stats/summary', authenticateToken, async (req, res) => {
       WHERE ${whereClause}
     `;
 
-    const statsResult = await db.query(statsQuery, queryParams);
+    const statsResult = await db.query<CODStats>(statsQuery, queryParams);
 
     // Get daily collection trends
     const trendsQuery = `
@@ -361,7 +470,7 @@ router.get('/stats/summary', authenticateToken, async (req, res) => {
       LIMIT 30
     `;
 
-    const trendsResult = await db.query(trendsQuery, queryParams);
+    const trendsResult = await db.query<DailyTrend>(trendsQuery, queryParams);
 
     // Get top delivery persons by collections
     const topCollectorsQuery = `
@@ -379,7 +488,7 @@ router.get('/stats/summary', authenticateToken, async (req, res) => {
       LIMIT 10
     `;
 
-    const topCollectorsResult = await db.query(topCollectorsQuery, queryParams);
+    const topCollectorsResult = await db.query<TopCollector>(topCollectorsQuery, queryParams);
 
     res.json({
       summary: statsResult.rows[0],
@@ -403,20 +512,20 @@ router.get('/stats/summary', authenticateToken, async (req, res) => {
 });
 
 // Get user's COD orders (for customers)
-router.get('/my-cod-orders', authenticateToken, async (req, res) => {
+router.get('/my-cod-orders', authenticateToken, async (req: Request, res: Response): Promise<Response | void> => {
   try {
-    const user_id = req.user.user_id;
-    const { status = 'all' } = req.query;
+    const user_id = req.user!.user_id;
+    const { status = 'all' } = req.query as { status?: string };
 
     let whereClause = 'WHERE o.user_id = $1 AND o.payment_method = \'cod\'';
-    let queryParams = [user_id];
+    let queryParams: any[] = [user_id];
 
     if (status !== 'all') {
       queryParams.push(status);
       whereClause += ` AND cod.collection_status = $${queryParams.length}`;
     }
 
-    const result = await db.query(`
+    const result = await db.query<UserCODOrder>(`
       SELECT 
         cod.collection_id,
         cod.amount_to_collect,
@@ -441,10 +550,10 @@ router.get('/my-cod-orders', authenticateToken, async (req, res) => {
         total_orders: result.rows.length,
         pending_amount: result.rows
           .filter(order => order.collection_status === 'pending')
-          .reduce((sum, order) => sum + parseFloat(order.amount_to_collect || 0), 0),
+          .reduce((sum, order) => sum + parseFloat(order.amount_to_collect.toString() || '0'), 0),
         collected_amount: result.rows
           .filter(order => order.collection_status === 'collected')
-          .reduce((sum, order) => sum + parseFloat(order.collected_amount || 0), 0)
+          .reduce((sum, order) => sum + parseFloat(order.collected_amount?.toString() || '0'), 0)
       }
     });
 
@@ -458,4 +567,4 @@ router.get('/my-cod-orders', authenticateToken, async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

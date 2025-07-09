@@ -1,8 +1,99 @@
-const express = require('express');
-const { body, validationResult } = require('express-validator');
-const db = require('../config/database');
-const { authenticateToken } = require('./auth');
+import express, { Request, Response } from 'express';
+import { body, validationResult } from 'express-validator';
+import * as db from '../config/database';
+import { authenticateToken } from './auth';
+
 const router = express.Router();
+
+// Type definitions
+interface OrderItem {
+  product_id: string;
+  variant_id?: string;
+  quantity: number;
+}
+
+interface DeliveryAddress {
+  latitude: number;
+  longitude: number;
+  address: string;
+}
+
+interface CreateOrderRequest {
+  items: OrderItem[];
+  delivery_address: DeliveryAddress;
+  payment_method: 'cod' | 'card';
+  notes?: string;
+  delivery_instructions?: string;
+}
+
+interface ProductDetails {
+  product_id: string;
+  name_ar: string;
+  price: string;
+  stock_quantity: number;
+  requires_age_verification: boolean;
+  variant_id?: string;
+  variant_value?: string;
+  price_modifier?: string;
+  variant_stock?: number;
+}
+
+interface ProcessedOrderItem {
+  product_id: string;
+  variant_id?: string;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+  product_name: string;
+}
+
+interface Order {
+  order_id: string;
+  order_number: string;
+  user_id: string;
+  subtotal: number;
+  delivery_fee: number;
+  total: number;
+  payment_method: 'cod' | 'card';
+  payment_status: 'pending' | 'completed' | 'failed' | 'cancelled';
+  order_status: 'pending' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
+  delivery_latitude: number;
+  delivery_longitude: number;
+  delivery_address: string;
+  delivery_instructions?: string;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+  items?: OrderItemWithDetails[];
+  cod_status?: string;
+  collected_amount?: number;
+  collected_at?: string;
+}
+
+interface OrderItemWithDetails {
+  item_id: string;
+  product_id: string;
+  variant_id?: string;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+  product_name: string;
+  variant_value?: string;
+  product_image?: string;
+}
+
+interface OrderFilters {
+  page?: string;
+  limit?: string;
+  status?: string;
+}
+
+interface PaginationInfo {
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
+}
 
 // Validation rules
 const validateCreateOrder = [
@@ -38,7 +129,7 @@ const validateCreateOrder = [
 ];
 
 // Create new order
-router.post('/', authenticateToken, validateCreateOrder, async (req, res) => {
+router.post('/', authenticateToken, validateCreateOrder, async (req: Request, res: Response): Promise<Response | void> => {
   const client = await db.pool.connect();
   
   try {
@@ -54,16 +145,16 @@ router.post('/', authenticateToken, validateCreateOrder, async (req, res) => {
 
     await client.query('BEGIN');
 
-    const { items, delivery_address, payment_method, notes, delivery_instructions } = req.body;
-    const user_id = req.user.user_id;
+    const { items, delivery_address, payment_method, notes, delivery_instructions } = req.body as CreateOrderRequest;
+    const user_id = req.user!.user_id;
 
     // Calculate order totals
     let subtotal = 0;
-    const orderItems = [];
+    const orderItems: ProcessedOrderItem[] = [];
 
     for (const item of items) {
       // Get product details
-      const productQuery = await client.query(`
+      const productQuery = await client.query<ProductDetails>(`
         SELECT 
           p.product_id, 
           p.name_ar, 
@@ -91,7 +182,7 @@ router.post('/', authenticateToken, validateCreateOrder, async (req, res) => {
       const product = productQuery.rows[0];
       
       // Check stock availability
-      const availableStock = item.variant_id ? product.variant_stock : product.stock_quantity;
+      const availableStock = item.variant_id ? (product.variant_stock || 0) : product.stock_quantity;
       if (availableStock < item.quantity) {
         await client.query('ROLLBACK');
         return res.status(400).json({
@@ -105,7 +196,7 @@ router.post('/', authenticateToken, validateCreateOrder, async (req, res) => {
 
       // Calculate item price
       const basePrice = parseFloat(product.price);
-      const priceModifier = parseFloat(product.price_modifier || 0);
+      const priceModifier = parseFloat(product.price_modifier || '0');
       const unitPrice = basePrice + priceModifier;
       const itemTotal = unitPrice * item.quantity;
 
@@ -122,8 +213,8 @@ router.post('/', authenticateToken, validateCreateOrder, async (req, res) => {
     }
 
     // Calculate delivery fee
-    const deliveryFee = parseFloat(process.env.DEFAULT_DELIVERY_FEE || 15.00);
-    const freeDeliveryThreshold = parseFloat(process.env.FREE_DELIVERY_THRESHOLD || 200.00);
+    const deliveryFee = parseFloat(process.env.DEFAULT_DELIVERY_FEE || '15.00');
+    const freeDeliveryThreshold = parseFloat(process.env.FREE_DELIVERY_THRESHOLD || '200.00');
     const finalDeliveryFee = subtotal >= freeDeliveryThreshold ? 0 : deliveryFee;
 
     // Calculate total
@@ -131,7 +222,7 @@ router.post('/', authenticateToken, validateCreateOrder, async (req, res) => {
 
     // Check COD limits
     if (payment_method === 'cod') {
-      const maxCodAmount = parseFloat(process.env.MAX_COD_AMOUNT || 500.00);
+      const maxCodAmount = parseFloat(process.env.MAX_COD_AMOUNT || '500.00');
       if (total > maxCodAmount) {
         await client.query('ROLLBACK');
         return res.status(400).json({
@@ -145,7 +236,7 @@ router.post('/', authenticateToken, validateCreateOrder, async (req, res) => {
     }
 
     // Create order
-    const orderResult = await client.query(`
+    const orderResult = await client.query<Order>(`
       INSERT INTO orders (
         user_id, 
         order_number,
@@ -251,7 +342,7 @@ router.post('/', authenticateToken, validateCreateOrder, async (req, res) => {
     await client.query('COMMIT');
 
     // Fetch complete order details
-    const completeOrder = await db.query(`
+    const completeOrder = await db.query<Order>(`
       SELECT 
         o.*,
         json_agg(
@@ -293,14 +384,14 @@ router.post('/', authenticateToken, validateCreateOrder, async (req, res) => {
 });
 
 // Get user's orders
-router.get('/my-orders', authenticateToken, async (req, res) => {
+router.get('/my-orders', authenticateToken, async (req: Request, res: Response): Promise<Response | void> => {
   try {
-    const { page = 1, limit = 10, status } = req.query;
-    const offset = (page - 1) * limit;
-    const user_id = req.user.user_id;
+    const { page = '1', limit = '10', status } = req.query as OrderFilters;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const user_id = req.user!.user_id;
 
     let whereClause = 'WHERE o.user_id = $1';
-    let queryParams = [user_id];
+    let queryParams: any[] = [user_id];
 
     if (status) {
       queryParams.push(status);
@@ -345,9 +436,9 @@ router.get('/my-orders', authenticateToken, async (req, res) => {
       LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
     `;
 
-    queryParams.push(parseInt(limit), parseInt(offset));
+    queryParams.push(parseInt(limit), offset);
 
-    const result = await db.query(query, queryParams);
+    const result = await db.query<Order>(query, queryParams);
 
     // Get total count
     const countQuery = `
@@ -356,17 +447,19 @@ router.get('/my-orders', authenticateToken, async (req, res) => {
       ${whereClause}
     `;
 
-    const countResult = await db.query(countQuery, queryParams.slice(0, -2));
+    const countResult = await db.query<{total: string}>(countQuery, queryParams.slice(0, -2));
     const total = parseInt(countResult.rows[0].total);
+
+    const pagination: PaginationInfo = {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      total: total,
+      pages: Math.ceil(total / parseInt(limit))
+    };
 
     res.json({
       orders: result.rows,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: total,
-        pages: Math.ceil(total / limit)
-      }
+      pagination
     });
 
   } catch (error) {
@@ -380,12 +473,12 @@ router.get('/my-orders', authenticateToken, async (req, res) => {
 });
 
 // Get order by ID
-router.get('/:order_id', authenticateToken, async (req, res) => {
+router.get('/:order_id', authenticateToken, async (req: Request, res: Response): Promise<Response | void> => {
   try {
     const { order_id } = req.params;
-    const user_id = req.user.user_id;
+    const user_id = req.user!.user_id;
 
-    const result = await db.query(`
+    const result = await db.query<Order>(`
       SELECT 
         o.*,
         json_agg(
@@ -435,17 +528,17 @@ router.get('/:order_id', authenticateToken, async (req, res) => {
 });
 
 // Cancel order (only if status is pending)
-router.patch('/:order_id/cancel', authenticateToken, async (req, res) => {
+router.patch('/:order_id/cancel', authenticateToken, async (req: Request, res: Response): Promise<Response | void> => {
   const client = await db.pool.connect();
   
   try {
     await client.query('BEGIN');
 
     const { order_id } = req.params;
-    const user_id = req.user.user_id;
+    const user_id = req.user!.user_id;
 
     // Check if order exists and belongs to user
-    const orderCheck = await client.query(`
+    const orderCheck = await client.query<{order_id: string, order_status: string, payment_method: string}>(`
       SELECT order_id, order_status, payment_method
       FROM orders 
       WHERE order_id = $1 AND user_id = $2
@@ -474,7 +567,7 @@ router.patch('/:order_id/cancel', authenticateToken, async (req, res) => {
     }
 
     // Get order items to restore stock
-    const itemsResult = await client.query(`
+    const itemsResult = await client.query<{product_id: string, variant_id: string | null, quantity: number}>(`
       SELECT oi.product_id, oi.variant_id, oi.quantity
       FROM order_items oi
       WHERE oi.order_id = $1
@@ -556,4 +649,4 @@ router.patch('/:order_id/cancel', authenticateToken, async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

@@ -1,31 +1,137 @@
-const express = require('express');
-const { body, query, validationResult } = require('express-validator');
-const db = require('../config/database');
-const { authenticateToken } = require('./auth');
+import express, { Request, Response } from 'express';
+import { body, query, validationResult } from 'express-validator';
+import * as db from '../config/database';
+import { authenticateToken } from './auth';
+
 const router = express.Router();
 
+// Type definitions
+interface ProductFilters {
+  category?: string;
+  subcategory?: string;
+  search?: string;
+  page?: string;
+  limit?: string;
+  sort?: string;
+  order?: string;
+  min_price?: string;
+  max_price?: string;
+  in_stock?: string;
+}
+
+interface ProductImage {
+  image_id: number;
+  url: string;
+  alt_text: string;
+  is_primary: boolean;
+  sort_order: number;
+}
+
+interface ProductVariant {
+  variant_id: number;
+  variant_type: string;
+  variant_value: string;
+  price_modifier: number;
+  stock_quantity: number;
+}
+
+interface Product {
+  product_id: number;
+  name_ar: string;
+  name_fr: string;
+  name_en: string;
+  description_ar: string;
+  description_fr: string;
+  description_en: string;
+  price: number;
+  compare_price: number;
+  stock_quantity: number;
+  low_stock_threshold: number;
+  requires_age_verification: boolean;
+  is_featured: boolean;
+  tags: string;
+  created_at: string;
+  updated_at?: string;
+  category_name: string;
+  subcategory_name: string;
+  images: ProductImage[];
+  variants: ProductVariant[];
+  rating_info?: {
+    avg_rating: number;
+    review_count: number;
+  };
+  reviews?: Review[];
+}
+
+interface Review {
+  review_id: number;
+  rating: number;
+  comment: string;
+  created_at: string;
+  reviewer_name: string;
+}
+
+interface Category {
+  category_id: number;
+  name: string;
+  description: string;
+  icon: string;
+  sort_order: number;
+  subcategories: Subcategory[];
+  product_count: number;
+}
+
+interface Subcategory {
+  subcategory_id: number;
+  name: string;
+  description: string;
+  sort_order: number;
+}
+
+interface PaginationInfo {
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
+  has_next: boolean;
+  has_prev: boolean;
+}
+
+interface SearchResult {
+  product_id: number;
+  name: string;
+  description: string;
+  price: number;
+  compare_price: number;
+  stock_quantity: number;
+  requires_age_verification: boolean;
+  category_name: string;
+  primary_image: string;
+  relevance: number;
+}
+
 // Get all products with filters
-router.get('/', async (req, res) => {
+router.get('/', async (req: Request, res: Response) => {
   try {
     const {
       category,
       subcategory,
       search,
-      page = 1,
-      limit = 20,
+      page = '1',
+      limit = '20',
       sort = 'name_ar',
       order = 'ASC',
       min_price,
       max_price,
       in_stock = 'true'
-    } = req.query;
+    } = req.query as ProductFilters;
 
     const language = req.language || 'ar';
-    const offset = (page - 1) * limit;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
 
     // Build dynamic query
     let whereConditions = ['p.is_active = true'];
-    let queryParams = [];
+    let queryParams: any[] = [];
     let paramCount = 0;
 
     // Category filter
@@ -139,9 +245,9 @@ router.get('/', async (req, res) => {
       LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
     `;
 
-    queryParams.push(parseInt(limit), parseInt(offset));
+    queryParams.push(parseInt(limit), offset);
 
-    const result = await db.query(query, queryParams);
+    const result = await db.query<Product>(query, queryParams);
 
     // Get total count for pagination
     const countQuery = `
@@ -152,19 +258,21 @@ router.get('/', async (req, res) => {
       ${whereClause}
     `;
 
-    const countResult = await db.query(countQuery, queryParams.slice(0, -2));
+    const countResult = await db.query<{total: string}>(countQuery, queryParams.slice(0, -2));
     const total = parseInt(countResult.rows[0].total);
+
+    const pagination: PaginationInfo = {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      total: total,
+      pages: Math.ceil(total / parseInt(limit)),
+      has_next: parseInt(page) * parseInt(limit) < total,
+      has_prev: parseInt(page) > 1
+    };
 
     res.json({
       products: result.rows,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: total,
-        pages: Math.ceil(total / limit),
-        has_next: parseInt(page) * parseInt(limit) < total,
-        has_prev: parseInt(page) > 1
-      },
+      pagination,
       filters: {
         category,
         subcategory,
@@ -188,12 +296,12 @@ router.get('/', async (req, res) => {
 });
 
 // Get single product by ID
-router.get('/:id', async (req, res) => {
+router.get('/:id', async (req: Request, res: Response): Promise<Response | void> => {
   try {
     const productId = req.params.id;
     const language = req.language || 'ar';
 
-    const result = await db.query(`
+    const result = await db.query<Product>(`
       SELECT 
         p.product_id,
         p.name_ar,
@@ -264,7 +372,7 @@ router.get('/:id', async (req, res) => {
     const product = result.rows[0];
 
     // Get reviews for this product
-    const reviewsResult = await db.query(`
+    const reviewsResult = await db.query<Review>(`
       SELECT 
         r.review_id,
         r.rating,
@@ -293,11 +401,11 @@ router.get('/:id', async (req, res) => {
 });
 
 // Get categories
-router.get('/categories/list', async (req, res) => {
+router.get('/categories/list', async (req: Request, res: Response) => {
   try {
     const language = req.language || 'ar';
     
-    const result = await db.query(`
+    const result = await db.query<Category>(`
       SELECT 
         c.category_id,
         c.name_${language} as name,
@@ -341,9 +449,15 @@ router.get('/categories/list', async (req, res) => {
 });
 
 // Search products (with Arabic text search support)
-router.get('/search/advanced', async (req, res) => {
+router.get('/search/advanced', async (req: Request, res: Response): Promise<Response | void> => {
   try {
-    const { q, category, price_min, price_max, sort = 'relevance' } = req.query;
+    const { q, category, price_min, price_max, sort = 'relevance' } = req.query as {
+      q?: string;
+      category?: string;
+      price_min?: string;
+      price_max?: string;
+      sort?: string;
+    };
     const language = req.language || 'ar';
 
     if (!q || q.trim().length < 2) {
@@ -377,7 +491,7 @@ router.get('/search/advanced', async (req, res) => {
         AND p.search_vector_${language} @@ plainto_tsquery('arabic', $1)
     `;
 
-    const queryParams = [q.trim()];
+    const queryParams: any[] = [q.trim()];
     let paramCount = 1;
 
     // Add category filter
@@ -420,7 +534,7 @@ router.get('/search/advanced', async (req, res) => {
 
     searchQuery += ' LIMIT 50';
 
-    const result = await db.query(searchQuery, queryParams);
+    const result = await db.query<SearchResult>(searchQuery, queryParams);
 
     res.json({
       results: result.rows,
@@ -445,12 +559,12 @@ router.get('/search/advanced', async (req, res) => {
 });
 
 // Get featured products
-router.get('/featured/list', async (req, res) => {
+router.get('/featured/list', async (req: Request, res: Response) => {
   try {
     const language = req.language || 'ar';
-    const limit = req.query.limit || 10;
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
 
-    const result = await db.query(`
+    const result = await db.query<SearchResult>(`
       SELECT 
         p.product_id,
         p.name_${language} as name,
@@ -470,7 +584,7 @@ router.get('/featured/list', async (req, res) => {
       WHERE p.is_active = true AND p.is_featured = true AND p.stock_quantity > 0
       ORDER BY p.created_at DESC
       LIMIT $1
-    `, [parseInt(limit)]);
+    `, [limit]);
 
     res.json({
       featured_products: result.rows
@@ -486,4 +600,4 @@ router.get('/featured/list', async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

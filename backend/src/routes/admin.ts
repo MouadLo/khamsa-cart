@@ -1,17 +1,168 @@
-const express = require('express');
-const { body, validationResult } = require('express-validator');
-const db = require('../config/database');
-const { authenticateToken } = require('./auth');
+import express, { Request, Response, NextFunction } from 'express';
+import { body, validationResult } from 'express-validator';
+import * as db from '../config/database';
+import { authenticateToken } from './auth';
+
 const router = express.Router();
 
+// Type definitions
+interface AdminDashboardStats {
+  period: string;
+  orders: OrderStats;
+  products: ProductStats;
+  users: UserStats;
+  cod: CODStats;
+  sales_trend: SalesTrend[];
+  top_products: TopProduct[];
+  generated_at: string;
+}
+
+interface OrderStats {
+  total_orders: number;
+  pending_orders: number;
+  delivered_orders: number;
+  cancelled_orders: number;
+  total_revenue: number;
+  avg_order_value: number;
+  cod_orders: number;
+  card_orders: number;
+}
+
+interface ProductStats {
+  total_products: number;
+  active_products: number;
+  low_stock_products: number;
+  out_of_stock_products: number;
+}
+
+interface UserStats {
+  total_users: number;
+  registered_users: number;
+  guest_users: number;
+  new_users_7d: number;
+}
+
+interface CODStats {
+  total_cod_collections: number;
+  pending_collections: number;
+  completed_collections: number;
+  pending_amount: number;
+  collected_amount: number;
+}
+
+interface SalesTrend {
+  date: string;
+  orders_count: number;
+  daily_revenue: number;
+}
+
+interface TopProduct {
+  product_id: string;
+  product_name: string;
+  total_sold: number;
+  total_revenue: number;
+}
+
+interface AdminOrder {
+  order_id: string;
+  order_number: string;
+  user_id: string;
+  subtotal: number;
+  delivery_fee: number;
+  total: number;
+  payment_method: 'cod' | 'card';
+  payment_status: string;
+  order_status: string;
+  delivery_address: string;
+  created_at: string;
+  updated_at: string;
+  customer_name: string;
+  customer_phone: string;
+  is_guest: boolean;
+  delivery_person_name?: string;
+  collection_status?: string;
+  collected_amount?: number;
+  items_count: number;
+}
+
+interface AdminOrderFilters {
+  status?: string;
+  payment_method?: string;
+  page?: string;
+  limit?: string;
+  search?: string;
+  start_date?: string;
+  end_date?: string;
+}
+
+interface UpdateOrderStatusRequest {
+  status: string;
+  assigned_delivery_person?: string;
+  notes?: string;
+}
+
+interface AdminUser {
+  user_id: string;
+  name: string;
+  phone: string;
+  email: string;
+  type: string;
+  is_guest: boolean;
+  is_active: boolean;
+  created_at: string;
+  last_login?: string;
+  total_orders: number;
+  total_spent: number;
+}
+
+interface AdminUserFilters {
+  type?: string;
+  page?: string;
+  limit?: string;
+  search?: string;
+  is_active?: string;
+}
+
+interface InventoryProduct {
+  product_id: string;
+  product_name: string;
+  stock_quantity: number;
+  low_stock_threshold: number;
+  price: number;
+  category_name: string;
+  sold_last_30d: number;
+  stock_status: 'Out of Stock' | 'Low Stock' | 'In Stock';
+}
+
+interface InventoryFilters {
+  category?: string;
+  low_stock_only?: string;
+}
+
+interface InventorySummary {
+  total_products: number;
+  out_of_stock: number;
+  low_stock: number;
+  in_stock: number;
+  total_inventory_value: number;
+}
+
+interface PaginationInfo {
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
+}
+
 // Admin authorization middleware
-function requireAdmin(req, res, next) {
-  if (req.user.type !== 'admin' && req.user.type !== 'manager') {
-    return res.status(403).json({
+function requireAdmin(req: Request, res: Response, next: NextFunction): void {
+  if (!req.user || (req.user.type !== 'admin' && req.user.type !== 'manager')) {
+    res.status(403).json({
       error: 'Admin access required',
       error_ar: 'مطلوب صلاحية المدير',
       error_fr: 'Accès administrateur requis'
     });
+    return;
   }
   next();
 }
@@ -21,9 +172,9 @@ router.use(authenticateToken);
 router.use(requireAdmin);
 
 // Dashboard statistics
-router.get('/dashboard/stats', async (req, res) => {
+router.get('/dashboard/stats', async (req: Request, res: Response): Promise<Response | void> => {
   try {
-    const { period = '7d' } = req.query;
+    const { period = '7d' } = req.query as { period?: string };
     
     // Calculate date range
     let dateFilter = '';
@@ -45,7 +196,7 @@ router.get('/dashboard/stats', async (req, res) => {
     }
 
     // Get order statistics
-    const orderStats = await db.query(`
+    const orderStats = await db.query<OrderStats>(`
       SELECT 
         COUNT(*) as total_orders,
         COUNT(*) FILTER (WHERE order_status = 'pending') as pending_orders,
@@ -60,7 +211,7 @@ router.get('/dashboard/stats', async (req, res) => {
     `);
 
     // Get product statistics
-    const productStats = await db.query(`
+    const productStats = await db.query<ProductStats>(`
       SELECT 
         COUNT(*) as total_products,
         COUNT(*) FILTER (WHERE is_active = true) as active_products,
@@ -70,7 +221,7 @@ router.get('/dashboard/stats', async (req, res) => {
     `);
 
     // Get user statistics
-    const userStats = await db.query(`
+    const userStats = await db.query<UserStats>(`
       SELECT 
         COUNT(*) as total_users,
         COUNT(*) FILTER (WHERE is_guest = false) as registered_users,
@@ -81,7 +232,7 @@ router.get('/dashboard/stats', async (req, res) => {
     `);
 
     // Get COD statistics
-    const codStats = await db.query(`
+    const codStats = await db.query<CODStats>(`
       SELECT 
         COUNT(*) as total_cod_collections,
         COUNT(*) FILTER (WHERE collection_status = 'pending') as pending_collections,
@@ -94,7 +245,7 @@ router.get('/dashboard/stats', async (req, res) => {
     `);
 
     // Get daily sales trend
-    const salesTrend = await db.query(`
+    const salesTrend = await db.query<SalesTrend>(`
       SELECT 
         DATE(created_at) as date,
         COUNT(*) as orders_count,
@@ -107,7 +258,7 @@ router.get('/dashboard/stats', async (req, res) => {
     `);
 
     // Get top products
-    const topProducts = await db.query(`
+    const topProducts = await db.query<TopProduct>(`
       SELECT 
         p.product_id,
         p.name_ar as product_name,
@@ -123,7 +274,7 @@ router.get('/dashboard/stats', async (req, res) => {
       LIMIT 10
     `);
 
-    res.json({
+    const dashboardStats: AdminDashboardStats = {
       period: period,
       orders: orderStats.rows[0],
       products: productStats.rows[0],
@@ -132,7 +283,9 @@ router.get('/dashboard/stats', async (req, res) => {
       sales_trend: salesTrend.rows,
       top_products: topProducts.rows,
       generated_at: new Date().toISOString()
-    });
+    };
+
+    res.json(dashboardStats);
 
   } catch (error) {
     console.error('Dashboard stats error:', error);
@@ -145,22 +298,22 @@ router.get('/dashboard/stats', async (req, res) => {
 });
 
 // Get all orders with filters (admin view)
-router.get('/orders', async (req, res) => {
+router.get('/orders', async (req: Request, res: Response): Promise<Response | void> => {
   try {
     const { 
       status, 
       payment_method, 
-      page = 1, 
-      limit = 20, 
+      page = '1', 
+      limit = '20', 
       search,
       start_date,
       end_date 
-    } = req.query;
+    } = req.query as AdminOrderFilters;
     
-    const offset = (page - 1) * limit;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
     
     let whereConditions = ['1=1'];
-    let queryParams = [];
+    let queryParams: any[] = [];
     let paramCount = 0;
 
     // Status filter
@@ -226,9 +379,9 @@ router.get('/orders', async (req, res) => {
       LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
     `;
 
-    queryParams.push(parseInt(limit), parseInt(offset));
+    queryParams.push(parseInt(limit), offset);
 
-    const result = await db.query(query, queryParams);
+    const result = await db.query<AdminOrder>(query, queryParams);
 
     // Get total count
     const countQuery = `
@@ -238,17 +391,19 @@ router.get('/orders', async (req, res) => {
       WHERE ${whereClause}
     `;
 
-    const countResult = await db.query(countQuery, queryParams.slice(0, -2));
+    const countResult = await db.query<{total: string}>(countQuery, queryParams.slice(0, -2));
     const total = parseInt(countResult.rows[0].total);
+
+    const pagination: PaginationInfo = {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      total: total,
+      pages: Math.ceil(total / parseInt(limit))
+    };
 
     res.json({
       orders: result.rows,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: total,
-        pages: Math.ceil(total / limit)
-      }
+      pagination
     });
 
   } catch (error) {
@@ -262,10 +417,10 @@ router.get('/orders', async (req, res) => {
 });
 
 // Update order status
-router.patch('/orders/:order_id/status', async (req, res) => {
+router.patch('/orders/:order_id/status', async (req: Request, res: Response): Promise<Response | void> => {
   try {
     const { order_id } = req.params;
-    const { status, assigned_delivery_person, notes } = req.body;
+    const { status, assigned_delivery_person, notes } = req.body as UpdateOrderStatusRequest;
 
     const validStatuses = [
       'pending', 'confirmed', 'preparing', 'ready_for_pickup',
@@ -283,7 +438,7 @@ router.patch('/orders/:order_id/status', async (req, res) => {
 
     // Build update query dynamically
     let updateFields = ['order_status = $2', 'updated_at = NOW()'];
-    let queryParams = [order_id, status];
+    let queryParams: any[] = [order_id, status];
     let paramCount = 2;
 
     if (assigned_delivery_person) {
@@ -310,7 +465,7 @@ router.patch('/orders/:order_id/status', async (req, res) => {
       RETURNING *
     `;
 
-    const result = await db.query(updateQuery, queryParams);
+    const result = await db.query<AdminOrder>(updateQuery, queryParams);
 
     if (result.rows.length === 0) {
       return res.status(404).json({
@@ -322,7 +477,7 @@ router.patch('/orders/:order_id/status', async (req, res) => {
 
     // If order is cancelled, restore stock
     if (status === 'cancelled') {
-      const itemsResult = await db.query(`
+      const itemsResult = await db.query<{product_id: string, variant_id: string | null, quantity: number}>(`
         SELECT oi.product_id, oi.variant_id, oi.quantity
         FROM order_items oi
         WHERE oi.order_id = $1
@@ -363,13 +518,13 @@ router.patch('/orders/:order_id/status', async (req, res) => {
 });
 
 // Get all users (admin view)
-router.get('/users', async (req, res) => {
+router.get('/users', async (req: Request, res: Response): Promise<Response | void> => {
   try {
-    const { type, page = 1, limit = 20, search, is_active } = req.query;
-    const offset = (page - 1) * limit;
+    const { type, page = '1', limit = '20', search, is_active } = req.query as AdminUserFilters;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
 
     let whereConditions = ['1=1'];
-    let queryParams = [];
+    let queryParams: any[] = [];
     let paramCount = 0;
 
     // User type filter
@@ -426,9 +581,9 @@ router.get('/users', async (req, res) => {
       LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
     `;
 
-    queryParams.push(parseInt(limit), parseInt(offset));
+    queryParams.push(parseInt(limit), offset);
 
-    const result = await db.query(query, queryParams);
+    const result = await db.query<AdminUser>(query, queryParams);
 
     // Get total count
     const countQuery = `
@@ -437,17 +592,19 @@ router.get('/users', async (req, res) => {
       WHERE ${whereClause}
     `;
 
-    const countResult = await db.query(countQuery, queryParams.slice(0, -2));
+    const countResult = await db.query<{total: string}>(countQuery, queryParams.slice(0, -2));
     const total = parseInt(countResult.rows[0].total);
+
+    const pagination: PaginationInfo = {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      total: total,
+      pages: Math.ceil(total / parseInt(limit))
+    };
 
     res.json({
       users: result.rows,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: total,
-        pages: Math.ceil(total / limit)
-      }
+      pagination
     });
 
   } catch (error) {
@@ -461,12 +618,12 @@ router.get('/users', async (req, res) => {
 });
 
 // Get inventory report
-router.get('/inventory/report', async (req, res) => {
+router.get('/inventory/report', async (req: Request, res: Response): Promise<Response | void> => {
   try {
-    const { category, low_stock_only = 'false' } = req.query;
+    const { category, low_stock_only = 'false' } = req.query as InventoryFilters;
 
     let whereConditions = ['p.is_active = true'];
-    let queryParams = [];
+    let queryParams: any[] = [];
     let paramCount = 0;
 
     if (category) {
@@ -481,7 +638,7 @@ router.get('/inventory/report', async (req, res) => {
 
     const whereClause = whereConditions.join(' AND ');
 
-    const result = await db.query(`
+    const result = await db.query<InventoryProduct>(`
       SELECT 
         p.product_id,
         p.name_ar as product_name,
@@ -515,7 +672,7 @@ router.get('/inventory/report', async (req, res) => {
     `, queryParams);
 
     // Get summary statistics
-    const summary = await db.query(`
+    const summary = await db.query<InventorySummary>(`
       SELECT 
         COUNT(*) as total_products,
         COUNT(*) FILTER (WHERE stock_quantity = 0) as out_of_stock,
@@ -546,4 +703,4 @@ router.get('/inventory/report', async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;
