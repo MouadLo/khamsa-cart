@@ -8,6 +8,7 @@ import * as dotenv from 'dotenv';
 import * as packageJson from '../package.json';
 
 import * as db from './config/database';
+import './types/express'; // Import Express type extensions
 
 // Import routes
 import authRoutes from './routes/auth';
