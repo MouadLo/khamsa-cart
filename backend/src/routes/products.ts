@@ -275,7 +275,7 @@ router.get("/", async (req: Request, res: Response) => {
     };
 
     res.json({
-      products: result.rows,
+      data: result.rows,
       pagination,
       filters: {
         category,
@@ -287,6 +287,8 @@ router.get("/", async (req: Request, res: Response) => {
         sort: sortColumn,
         order: sortOrder,
       },
+      success: true,
+      message: "Products fetched successfully"
     });
   } catch (error) {
     console.error("Products fetch error:", error);
@@ -360,7 +362,11 @@ router.get(
 
       const product = result.rows[0];
 
-      res.json({ product });
+      res.json({ 
+        data: product,
+        success: true,
+        message: "Product fetched successfully"
+      });
     } catch (error) {
       console.error("Product fetch error:", error);
       res.status(500).json({
@@ -372,44 +378,6 @@ router.get(
   }
 );
 
-// Get categories
-router.get("/categories", async (req: Request, res: Response) => {
-  try {
-    const language = req.language || "ar";
-
-    const result = await db.query<Category>(`
-      SELECT 
-        c.id,
-        c.name_${language} as name,
-        c.description_${language} as description,
-        c.image_url,
-        c.icon_url,
-        c.sort_order,
-        c.parent_id,
-        c.is_vape_category,
-        c.age_restricted,
-        (
-          SELECT COUNT(*) 
-          FROM products p 
-          WHERE p.category_id = c.id AND p.is_active = true
-        ) as product_count
-      FROM categories c
-      WHERE c.is_active = true
-      ORDER BY c.sort_order, c.name_${language}
-    `);
-
-    res.json({
-      categories: result.rows,
-    });
-  } catch (error) {
-    console.error("Categories fetch error:", error);
-    res.status(500).json({
-      error: "Failed to fetch categories",
-      error_ar: "فشل في جلب الفئات",
-      error_fr: "Échec de récupération des catégories",
-    });
-  }
-});
 
 // Search products (with Arabic text search support)
 router.get(

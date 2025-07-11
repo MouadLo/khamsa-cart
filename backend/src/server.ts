@@ -12,6 +12,8 @@ import * as db from './config/database';
 // Import routes
 import authRoutes from './routes/auth';
 import productRoutes from './routes/products';
+import categoryRoutes from './routes/categories';
+import cartRoutes from './routes/cart';
 import orderRoutes from './routes/orders';
 import codRoutes from './routes/cod';
 import adminRoutes from './routes/admin';
@@ -52,6 +54,7 @@ interface ApiInfoResponse {
     health: string;
     auth: string;
     products: string;
+    categories: string;
     orders: string;
     cod: string;
     admin: string;
@@ -184,6 +187,8 @@ app.get('/health', async (req: Request, res: Response) => {
 // API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
+app.use('/api/categories', categoryRoutes);
+app.use('/api/cart', cartRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/cod', codRoutes);
 app.use('/api/admin', adminRoutes);
@@ -206,6 +211,7 @@ app.get('/', (req: Request, res: Response) => {
       health: '/health',
       auth: '/api/auth',
       products: '/api/products',
+      categories: '/api/categories',
       orders: '/api/orders',
       cod: '/api/cod',
       admin: '/api/admin'

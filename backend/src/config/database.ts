@@ -68,9 +68,7 @@ const dbConfig: DatabaseConfig = {
   query_timeout: 60000,           // 60 seconds
   
   // SSL configuration (important for production)
-  ssl: process.env.NODE_ENV === 'production' ? {
-    rejectUnauthorized: false
-  } : false,
+  ssl: false, // Disable SSL for development
   
   // Application name for monitoring
   application_name: 'groceryvape_morocco_api'
