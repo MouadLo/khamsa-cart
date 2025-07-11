@@ -4,7 +4,7 @@
 -- ============================================================================
 
 -- Clear existing data (for development only)
-TRUNCATE TABLE inventory, product_variants, products, categories, users CASCADE;
+-- TRUNCATE TABLE inventory, product_variants, products, categories, users CASCADE;
 
 -- ============================================================================
 -- ENHANCED CATEGORIES - Morocco Specific
@@ -20,32 +20,32 @@ INSERT INTO categories (id, name_ar, name_fr, name_en, description_ar, descripti
 (uuid_generate_v4(), 'الخبز والمعجنات', 'Pain & Pâtisseries', 'Bread & Bakery', 'الخبز والمعجنات المغربية', 'Pain et pâtisseries marocaines', 'Moroccan bread and pastries', false, false, true, true, 6, 'https://example.com/categories/bakery.jpg'),
 (uuid_generate_v4(), 'البهارات والتوابل', 'Épices & Condiments', 'Spices & Condiments', 'البهارات والتوابل المغربية الأصيلة', 'Épices et condiments marocains authentiques', 'Authentic Moroccan spices and condiments', false, false, true, true, 7, 'https://example.com/categories/spices.jpg'),
 (uuid_generate_v4(), 'الشاي والقهوة', 'Thé & Café', 'Tea & Coffee', 'الشاي الأتاي والقهوة المغربية', 'Thé Atay et café marocain', 'Moroccan Atay tea and coffee', false, false, true, true, 8, 'https://example.com/categories/tea-coffee.jpg')
-ON CONFLICT (name_en) DO NOTHING;
+;
 
 -- Vape sub-categories
 INSERT INTO categories (id, name_ar, name_fr, name_en, description_ar, parent_id, is_vape_category, age_restricted, is_active, sort_order)
 SELECT 
     uuid_generate_v4(), 'السوائل الإلكترونية', 'E-liquides', 'E-Liquids', 'سوائل إلكترونية بنكهات متنوعة', c.id, true, true, true, 1
 FROM categories c WHERE c.name_en = 'Vape Products' LIMIT 1
-ON CONFLICT (name_en) DO NOTHING;
+;
 
 INSERT INTO categories (id, name_ar, name_fr, name_en, description_ar, parent_id, is_vape_category, age_restricted, is_active, sort_order)
 SELECT 
     uuid_generate_v4(), 'الأجهزة المحمولة', 'Appareils Portables', 'Portable Devices', 'أجهزة فيب محمولة وسهلة الاستخدام', c.id, true, true, true, 2
 FROM categories c WHERE c.name_en = 'Vape Products' LIMIT 1
-ON CONFLICT (name_en) DO NOTHING;
+;
 
 INSERT INTO categories (id, name_ar, name_fr, name_en, description_ar, parent_id, is_vape_category, age_restricted, is_active, sort_order)
 SELECT 
     uuid_generate_v4(), 'الأجهزة المتقدمة', 'Mods Avancés', 'Advanced Mods', 'أجهزة فيب متقدمة للمحترفين', c.id, true, true, true, 3
 FROM categories c WHERE c.name_en = 'Vape Products' LIMIT 1
-ON CONFLICT (name_en) DO NOTHING;
+;
 
 INSERT INTO categories (id, name_ar, name_fr, name_en, description_ar, parent_id, is_vape_category, age_restricted, is_active, sort_order)
 SELECT 
     uuid_generate_v4(), 'الإكسسوارات', 'Accessoires', 'Accessories', 'إكسسوارات أجهزة الفيب', c.id, true, true, true, 4
 FROM categories c WHERE c.name_en = 'Vape Products' LIMIT 1
-ON CONFLICT (name_en) DO NOTHING;
+;
 
 -- ============================================================================
 -- ENHANCED PRODUCTS - Morocco Specific
@@ -63,7 +63,7 @@ INSERT INTO products (id, category_id, name_ar, name_fr, name_en, description_ar
 (uuid_generate_v4(), (SELECT id FROM categories WHERE name_en = 'Dairy Products' LIMIT 1), 'جبنة البقرة الضاحكة', 'Fromage La Vache Qui Rit', 'Laughing Cow Cheese', 'جبنة البقرة الضاحكة الكريمية', 'Fromage crémeux La Vache Qui Rit', 'Creamy Laughing Cow cheese', 'CHEESE-LAUGHING-COW-001', 'البقرة الضاحكة', 12.00, 7.20, true, true, '{"https://example.com/products/laughing-cow-cheese.jpg"}', 'جبنة البقرة الضاحكة'),
 
 (uuid_generate_v4(), (SELECT id FROM categories WHERE name_en = 'Dairy Products' LIMIT 1), 'زبدة الأطلس', 'Beurre Atlas', 'Atlas Butter', 'زبدة طبيعية من كريمة الحليب الطازج', 'Beurre naturel de crème de lait frais', 'Natural butter from fresh milk cream', 'BUTTER-ATLAS-001', 'أطلس', 15.00, 9.00, true, false, '{"https://example.com/products/butter-atlas.jpg"}', 'زبدة الأطلس الطبيعية')
-ON CONFLICT (sku) DO NOTHING;
+;
 
 -- MOROCCAN BEVERAGES
 INSERT INTO products (id, category_id, name_ar, name_fr, name_en, description_ar, description_fr, description_en, sku, brand, base_price, cost_price, is_active, is_featured, image_urls, meta_title_ar) VALUES
@@ -77,7 +77,7 @@ INSERT INTO products (id, category_id, name_ar, name_fr, name_en, description_ar
 (uuid_generate_v4(), (SELECT id FROM categories WHERE name_en = 'Moroccan Beverages' LIMIT 1), 'كوكا كولا المغرب', 'Coca-Cola Maroc', 'Coca-Cola Morocco', 'كوكا كولا المنتجة في المغرب', 'Coca-Cola produite au Maroc', 'Coca-Cola produced in Morocco', 'COLA-COCA-MOROCCO-001', 'كوكا كولا', 6.00, 3.60, true, true, '{"https://example.com/products/coca-cola-morocco.jpg"}', 'كوكا كولا المغرب'),
 
 (uuid_generate_v4(), (SELECT id FROM categories WHERE name_en = 'Moroccan Beverages' LIMIT 1), 'عصير الليمون الحامض', 'Jus de Citron', 'Lemon Juice', 'عصير الليمون الحامض الطبيعي', 'Jus de citron naturel', 'Natural lemon juice', 'JUICE-LEMON-001', 'عصائر المغرب', 7.50, 4.50, true, false, '{"https://example.com/products/lemon-juice.jpg"}', 'عصير الليمون الحامض')
-ON CONFLICT (sku) DO NOTHING;
+;
 
 -- VAPE PRODUCTS
 INSERT INTO products (id, category_id, name_ar, name_fr, name_en, description_ar, description_fr, description_en, sku, brand, base_price, cost_price, is_vape_product, age_restricted, is_active, is_featured, image_urls, meta_title_ar) VALUES
@@ -90,7 +90,7 @@ INSERT INTO products (id, category_id, name_ar, name_fr, name_en, description_ar
 (uuid_generate_v4(), (SELECT id FROM categories WHERE name_en = 'Portable Devices' LIMIT 1), 'جهاز فيب بود صغير', 'Pod Vape Compact', 'Compact Pod Vape', 'جهاز فيب صغير وسهل الاستخدام، مثالي للمبتدئين', 'Dispositif vape compact et facile à utiliser, idéal pour les débutants', 'Compact and easy-to-use vape device, ideal for beginners', 'POD-COMPACT-001', 'TechVape', 120.00, 72.00, true, true, true, true, '{"https://example.com/products/pod-compact.jpg"}', 'جهاز فيب بود صغير'),
 
 (uuid_generate_v4(), (SELECT id FROM categories WHERE name_en = 'Advanced Mods' LIMIT 1), 'جهاز مود متقدم', 'Mod Avancé', 'Advanced Mod', 'جهاز مود متقدم للمحترفين مع تحكم دقيق في الطاقة', 'Mod avancé pour professionnels avec contrôle précis de la puissance', 'Advanced mod for professionals with precise power control', 'MOD-ADVANCED-001', 'ProVape', 250.00, 150.00, true, true, true, true, '{"https://example.com/products/mod-advanced.jpg"}', 'جهاز مود متقدم')
-ON CONFLICT (sku) DO NOTHING;
+;
 
 -- ============================================================================
 -- PRODUCT VARIANTS
@@ -111,7 +111,7 @@ INSERT INTO product_variants (id, product_id, variant_name_ar, variant_name_fr, 
 (uuid_generate_v4(), (SELECT id FROM products WHERE sku = 'POD-COMPACT-001' LIMIT 1), 'أسود', 'Noir', 'Black', 'POD-COMPACT-001-BLACK', '{"color": "black", "color_ar": "أسود", "battery": "850mAh"}', 120.00, 72.00, true, true, 1),
 (uuid_generate_v4(), (SELECT id FROM products WHERE sku = 'POD-COMPACT-001' LIMIT 1), 'أزرق', 'Bleu', 'Blue', 'POD-COMPACT-001-BLUE', '{"color": "blue", "color_ar": "أزرق", "battery": "850mAh"}', 120.00, 72.00, false, true, 2),
 (uuid_generate_v4(), (SELECT id FROM products WHERE sku = 'POD-COMPACT-001' LIMIT 1), 'أحمر', 'Rouge', 'Red', 'POD-COMPACT-001-RED', '{"color": "red", "color_ar": "أحمر", "battery": "850mAh"}', 120.00, 72.00, false, true, 3)
-ON CONFLICT (sku) DO NOTHING;
+;
 
 -- ============================================================================
 -- INVENTORY
@@ -151,12 +151,12 @@ INSERT INTO users (id, phone, email, name, role, preferred_language, is_guest, a
 (uuid_generate_v4(), '+212662345679', 'zahra.fatima@gmail.com', 'زهراء فاطمة', 'customer', 'ar', false, false, '2005-03-20'),
 (uuid_generate_v4(), '+212663456780', 'alami.mohamed@gmail.com', 'العلمي محمد', 'customer', 'fr', false, true, '1985-12-10'),
 (uuid_generate_v4(), '+212664567891', NULL, 'ضيف جديد', 'customer', 'ar', true, false, NULL)
-ON CONFLICT (phone) DO NOTHING;
+;
 
 -- Sample admin user
 INSERT INTO users (id, phone, email, name, role, preferred_language, is_guest, password_hash) VALUES
 (uuid_generate_v4(), '+212661000002', 'admin2@groceryvape.ma', 'مدير النظام الثاني', 'admin', 'ar', false, '$2b$10$example_hash_here')
-ON CONFLICT (phone) DO NOTHING;
+;
 
 -- ============================================================================
 -- SAMPLE ADDRESSES (fix coordinate type)
@@ -172,10 +172,10 @@ SELECT
     'الدار البيضاء-سطات',
     '20250',
     'بجانب مسجد الحسن الثاني',
-    POINT(-7.6114, 33.5731),
+    '(-7.6114, 33.5731)',
     true
 FROM users u WHERE u.email = 'hassan.ahmed@gmail.com'
-ON CONFLICT DO NOTHING;
+;
 
 INSERT INTO user_addresses (user_id, label, address_line, neighborhood, city, region, postal_code, landmark, coordinates, is_default)
 SELECT 
@@ -187,10 +187,10 @@ SELECT
     'الدار البيضاء-سطات',
     '20100',
     'بجانب البنك الشعبي',
-    POINT(-7.6186, 33.5892),
+    '(-7.6186, 33.5892)',
     false
 FROM users u WHERE u.email = 'alami.mohamed@gmail.com'
-ON CONFLICT DO NOTHING;
+;
 
 -- ============================================================================
 -- DELIVERY ZONES (avoid duplicates)
@@ -216,7 +216,7 @@ INSERT INTO delivery_zones (name_ar, name_fr, name_en, boundary, delivery_fee, f
 ('سباتة', 'Sbata', 'Sbata',
  ST_GeomFromText('POLYGON((-7.60 33.54, -7.55 33.54, -7.55 33.58, -7.60 33.58, -7.60 33.54))', 4326),
  30.00, 350.00, true, 3, 6)
-ON CONFLICT (name_en) DO NOTHING;
+;
 
 -- ============================================================================
 -- VERIFICATION QUERY
