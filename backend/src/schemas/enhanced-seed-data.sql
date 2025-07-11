@@ -4,7 +4,7 @@
 -- ============================================================================
 
 -- Clear existing data (for development only)
--- TRUNCATE TABLE inventory, product_variants, products, categories, users CASCADE;
+TRUNCATE TABLE inventory, product_variants, products, categories, users CASCADE;
 
 -- ============================================================================
 -- ENHANCED CATEGORIES - Morocco Specific
